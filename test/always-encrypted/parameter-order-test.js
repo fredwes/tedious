@@ -123,7 +123,6 @@ describe('always encrypted', function() {
 
   beforeEach(function(done) {
     connection = new Connection(config);
-    // connection.on('debug', (msg) => console.log(msg));
     connection.on('connect', () => {
       dropKeys((err) => {
         if (err) {
@@ -215,8 +214,6 @@ describe('always encrypted', function() {
           for (const { paramName, type, value } of parameters) {
             request.addParameter(paramName, type, value);
           }
-          console.log('>> Count: ', rowCount, '... Parameters: ', parameters);
-
           connection.execSql(request);
         }
       };
@@ -230,7 +227,6 @@ describe('always encrypted', function() {
 
           try {
             for (const row of values) {
-              console.log('row: ', row);
               assert.deepEqual(row, [p1, p2, p3, p4, p5, p6, p7, p8]);
             }
           } catch (error) {
@@ -241,7 +237,6 @@ describe('always encrypted', function() {
         });
 
         request.on('row', function(columns) {
-          console.log('row coming in!');
           values.push(columns.map((col) => col.value));
         });
 
