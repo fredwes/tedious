@@ -68,7 +68,7 @@ export class ColumnEncryptionAzureKeyVaultProvider {
     const signatureLength: number = encryptedColumnEncryptionKey.length - currentIndex - cipherTextLength;
 
     if (signatureLength !== keySizeInBytes) {
-      throw new Error('The specified encrypted column encryption key\'s signature length: {0} does not match the signature length: {1} when using column master key (Azure Key Vault key) in {2}. The encrypted column encryption key may be corrupt, or the specified Azure Key Vault key path may be incorrect.');
+      throw new Error(`The specified encrypted column encryption key\'s signature length: ${signatureLength} does not match the signature length: ${keySizeInBytes} when using column master key (Azure Key Vault key) in ${masterKeyPath}. The encrypted column encryption key may be corrupt, or the specified Azure Key Vault key path may be incorrect.`)
     }
 
     const cipherText = Buffer.alloc(cipherTextLength);
