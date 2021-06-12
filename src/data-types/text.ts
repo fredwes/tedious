@@ -1,5 +1,6 @@
 import { DataType } from '../data-type';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const NULL_LENGTH = Buffer.from([0xFF, 0xFF, 0xFF, 0xFF]);
 
 const Text: DataType = {
   id: 0x23,
@@ -22,36 +23,39 @@ const Text: DataType = {
     }
   },
 
-  writeTypeInfo: function(buffer, parameter) {
-    buffer.writeUInt8(this.id);
-    buffer.writeInt32LE(parameter.length);
+  generateTypeInfo(parameter, _options) {
+    const buffer = Buffer.alloc(10);
+    buffer.writeUInt8(this.id, 0);
+    buffer.writeInt32LE(parameter.length!, 1);
+    // TODO: Collation handling
+    return buffer;
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    const buffer = new WritableTrackingBuffer(0);
-    buffer.writeBuffer(Buffer.from([0x00, 0x00, 0x00, 0x00, 0x00]));
-    if (parameter.value != null) {
-      buffer.writeInt32LE(parameter.length!);
-      buffer.writeString(parameter.value.toString(), 'ascii');
-      yield buffer.data;
-    } else {
-      buffer.writeInt32LE(parameter.length!);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    const buffer = Buffer.alloc(4);
+    buffer.writeInt32LE(parameter.length!, 0);
+    return buffer;
   },
 
-  validate: function(value): string | null | TypeError {
+  generateParameterData: function*(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    yield Buffer.from(parameter.value.toString(), 'ascii');
+  },
+
+  validate: function(value): string | null {
     if (value == null) {
       return null;
     }
     if (typeof value !== 'string') {
       if (typeof value.toString !== 'function') {
-        return TypeError('Invalid string.');
+        throw new TypeError('Invalid string.');
       }
       value = value.toString();
     }

@@ -1,50 +1,68 @@
 import { codepageBySortId, codepageByLcid } from './collation';
-import Parser from './token/stream-parser';
+import Parser, { IParser } from './token/stream-parser';
 import { InternalConnectionOptions } from './connection';
 import { TYPE, DataType } from './data-type';
 import { CryptoMetadata } from './always-encrypted/types';
 
 import { sprintf } from 'sprintf-js';
 
-type Collation = {
+interface Collation {
   lcid: number;
   flags: number;
   version: number;
   sortId: number;
   codepage: string;
-};
+}
 
-type XmlSchema = {
+interface XmlSchema {
   dbname: string;
   owningSchema: string;
   xmlSchemaCollection: string;
-};
+}
 
-type UdtInfo = {
+interface UdtInfo {
   maxByteSize: number;
   dbname: string;
   owningSchema: string;
   typeName: string;
   assemblyName: string;
-};
+}
 
 export type BaseMetadata = {
   userType: number;
+
   flags: number;
+  /**
+   * The column's type, such as VarChar, Int or Binary.
+   */
   type: DataType;
+
   collation: Collation | undefined;
+  /**
+   * The precision. Only applicable to numeric and decimal.
+   */
   precision: number | undefined;
+
+  /**
+   * The scale. Only applicable to numeric, decimal, time, datetime2 and datetimeoffset.
+   */
   scale: number | undefined;
+
+  /**
+   * The length, for char, varchar, nvarchar and varbinary.
+   */
   dataLength: number | undefined;
+
   schema: XmlSchema | undefined;
+
   udtInfo: UdtInfo | undefined;
-};
+}
 
 export type Metadata = {
   cryptoMetadata?: CryptoMetadata;
 } & BaseMetadata;
 
-function readCollation(parser: Parser, callback: (collation: Collation | undefined) => void) {
+function readCollation(parser: IParser, callback: (collation: Collation | undefined) => void) {
   // s2.2.5.1.2
   parser.readBuffer(5, (collationData) => {
     let lcid = (collationData[2] & 0x0F) << 16;
@@ -124,7 +142,7 @@ function metadataParse(parser: Parser, options: InternalConnectionOptions, callb
         const type: DataType = TYPE[typeNumber];
 
         if (!type) {
-          return parser.emit('error', new Error(sprintf('Unrecognised data type 0x%02X', typeNumber)));
+          throw new Error(sprintf('Unrecognised data type 0x%02X', typeNumber));
         }
 
         switch (type.name) {
@@ -325,7 +343,7 @@ function metadataParse(parser: Parser, options: InternalConnectionOptions, callb
             });
 
           default:
-            return parser.emit('error', new Error(sprintf('Unrecognised type %s', type.name)));
+            throw new Error(sprintf('Unrecognised type %s', type.name));
         }
       });
     });

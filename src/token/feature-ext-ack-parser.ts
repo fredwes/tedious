@@ -1,5 +1,4 @@
 import Parser from './stream-parser';
-import { ColumnMetadata } from './colmetadata-token-parser';
 import { InternalConnectionOptions } from '../connection';
 
 import { FeatureExtAckToken } from './token';
@@ -13,7 +12,7 @@ const FEATURE_ID = {
   TERMINATOR: 0xFF
 };
 
-function featureExtAckParser(parser: Parser, _colMetadata: ColumnMetadata[], _options: InternalConnectionOptions, callback: (token: FeatureExtAckToken) => void) {
+function featureExtAckParser(parser: Parser, _options: InternalConnectionOptions, callback: (token: FeatureExtAckToken) => void) {
   let fedAuth: Buffer | undefined;
   let columnEncryption: boolean | undefined;
 
@@ -30,12 +29,12 @@ function featureExtAckParser(parser: Parser, _colMetadata: ColumnMetadata[], _op
           }
           if (featureId === FEATURE_ID.COLUMNENCRYPTION) {
             if (1 > featureData.length) {
-              parser.emit('error', new Error(`Unsupported featureDataLength ${featureData.length} for feature type ${featureId}`));
+              throw new Error(`Unsupported featureDataLength ${featureData.length} for feature type ${featureId}`);
             }
 
             const supportedTceVersion = featureData[0];
             if (0 === supportedTceVersion || supportedTceVersion > 0x01) {
-              parser.emit('error', new Error(`Unsupported TceVersion ${supportedTceVersion}`));
+              throw new Error(`Unsupported TceVersion ${supportedTceVersion}`);
             }
 
             columnEncryption = true;

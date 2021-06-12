@@ -1,7 +1,6 @@
-import { DataType, ParameterData } from '../data-type';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+import { DataType } from '../data-type';
 
-const NULL = (1 << 16) - 1;
+const NULL_LENGTH = Buffer.from([0xFF, 0xFF]);
 
 const Binary: { maximumLength: number } & DataType = {
   id: 0xAD,
@@ -36,27 +35,29 @@ const Binary: { maximumLength: number } & DataType = {
     }
   },
 
-  writeTypeInfo: function(buffer, parameter: ParameterData<Buffer | null>) {
-    buffer.writeUInt8(this.id);
-    buffer.writeUInt16LE(parameter.length);
+  generateTypeInfo(parameter) {
+    const buffer = Buffer.alloc(3);
+    buffer.writeUInt8(this.id, 0);
+    buffer.writeUInt16LE(parameter.length!, 1);
+    return buffer;
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function* (parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt16LE(parameter.length!);
-      buffer.writeBuffer(parameter.value.slice(0, parameter.length !== undefined ? Math.min(parameter.length, this.maximumLength) : this.maximumLength));
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt16LE(NULL);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    const buffer = Buffer.alloc(2);
+    buffer.writeUInt16LE(parameter.length!, 0);
+    return buffer;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    yield parameter.value.slice(0, parameter.length !== undefined ? Math.min(parameter.length, this.maximumLength) : this.maximumLength);
   },
 
   toBuffer: function(parameter) {
@@ -70,13 +71,13 @@ const Binary: { maximumLength: number } & DataType = {
     }
   },
 
-  validate: function(value): Buffer | null | TypeError {
+  validate: function(value): Buffer | null {
     if (value == null) {
       return null;
     }
 
     if (!Buffer.isBuffer(value)) {
-      return new TypeError('Invalid buffer.');
+      throw new TypeError('Invalid buffer.');
     }
 
     return value;

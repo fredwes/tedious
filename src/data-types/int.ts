@@ -1,6 +1,8 @@
 import { DataType } from '../data-type';
 import IntN from './intn';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const NULL_LENGTH = Buffer.from([0x00]);
+const DATA_LENGTH = Buffer.from([0x04]);
 
 const Int: DataType = {
   id: 0x38,
@@ -11,27 +13,26 @@ const Int: DataType = {
     return 'int';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(IntN.id);
-    buffer.writeUInt8(4);
+  generateTypeInfo() {
+    return Buffer.from([IntN.id, 0x04]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(5);
-      buffer.writeUInt8(4);
-      buffer.writeInt32LE(Number(parameter.value));
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    return DATA_LENGTH;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const buffer = Buffer.alloc(4);
+    buffer.writeInt32LE(Number(parameter.value), 0);
+    yield buffer;
   },
 
   toBuffer: function(parameter) {
@@ -48,7 +49,7 @@ const Int: DataType = {
     }
   },
 
-  validate: function(value): number | null | TypeError {
+  validate: function(value): number | null {
     if (value == null) {
       return null;
     }
@@ -58,11 +59,11 @@ const Int: DataType = {
     }
 
     if (isNaN(value)) {
-      return new TypeError('Invalid number.');
+      throw new TypeError('Invalid number.');
     }
 
     if (value < -2147483648 || value > 2147483647) {
-      return new TypeError('Value must be between -2147483648 and 2147483647, inclusive.');
+      throw new TypeError('Value must be between -2147483648 and 2147483647, inclusive.');
     }
 
     return value | 0;

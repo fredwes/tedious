@@ -1,9 +1,10 @@
 import { DataType } from '../data-type';
 import DateTimeN from './datetimen';
 import { ChronoUnit, LocalDate } from '@js-joda/core';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
 
 const EPOCH_DATE = LocalDate.ofYearDay(1900, 1);
+const NULL_LENGTH = Buffer.from([0x00]);
+const DATA_LENGTH = Buffer.from([0x08]);
 
 const DateTime: DataType = {
   id: 0x3D,
@@ -14,65 +15,60 @@ const DateTime: DataType = {
     return 'datetime';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(DateTimeN.id);
-    buffer.writeUInt8(8);
+  generateTypeInfo() {
+    return Buffer.from([DateTimeN.id, 0x08]);
   },
 
-  // ParameterData<any> is temporary solution. TODO: need to understand what type ParameterData<...> can be.
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
+    }
+
+    return DATA_LENGTH;
   },
 
+  generateParameterData: function*(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
 
-  generate: function*(parameter, options) {
     const value = parameter.value as any; // Temporary solution. Remove 'any' later.
 
-    if (value != null) {
-      const buffer = new WritableTrackingBuffer(16);
-
-      let date;
-      if (options.useUTC) {
-        date = LocalDate.of(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
-      } else {
-        date = LocalDate.of(value.getFullYear(), value.getMonth() + 1, value.getDate());
-      }
-
-      let days = EPOCH_DATE.until(date, ChronoUnit.DAYS);
-
-      let milliseconds, threeHundredthsOfSecond;
-      if (options.useUTC) {
-        let seconds = value.getUTCHours() * 60 * 60;
-        seconds += value.getUTCMinutes() * 60;
-        seconds += value.getUTCSeconds();
-        milliseconds = (seconds * 1000) + value.getUTCMilliseconds();
-      } else {
-        let seconds = value.getHours() * 60 * 60;
-        seconds += value.getMinutes() * 60;
-        seconds += value.getSeconds();
-        milliseconds = (seconds * 1000) + value.getMilliseconds();
-      }
-
-      threeHundredthsOfSecond = milliseconds / (3 + (1 / 3));
-      threeHundredthsOfSecond = Math.round(threeHundredthsOfSecond);
-
-      // 25920000 equals one day
-      if (threeHundredthsOfSecond === 25920000) {
-        days += 1;
-        threeHundredthsOfSecond = 0;
-      }
-
-      buffer.writeUInt8(8);
-      buffer.writeInt32LE(days);
-      buffer.writeUInt32LE(threeHundredthsOfSecond);
-
-      yield buffer.data;
+    let date;
+    if (options.useUTC) {
+      date = LocalDate.of(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
     } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+      date = LocalDate.of(value.getFullYear(), value.getMonth() + 1, value.getDate());
     }
+
+    let days = EPOCH_DATE.until(date, ChronoUnit.DAYS);
+
+    let milliseconds, threeHundredthsOfSecond;
+    if (options.useUTC) {
+      let seconds = value.getUTCHours() * 60 * 60;
+      seconds += value.getUTCMinutes() * 60;
+      seconds += value.getUTCSeconds();
+      milliseconds = (seconds * 1000) + value.getUTCMilliseconds();
+    } else {
+      let seconds = value.getHours() * 60 * 60;
+      seconds += value.getMinutes() * 60;
+      seconds += value.getSeconds();
+      milliseconds = (seconds * 1000) + value.getMilliseconds();
+    }
+
+    threeHundredthsOfSecond = milliseconds / (3 + (1 / 3));
+    threeHundredthsOfSecond = Math.round(threeHundredthsOfSecond);
+
+    // 25920000 equals one day
+    if (threeHundredthsOfSecond === 25920000) {
+      days += 1;
+      threeHundredthsOfSecond = 0;
+    }
+
+    const buffer = Buffer.alloc(8);
+    buffer.writeInt32LE(days, 0);
+    buffer.writeUInt32LE(threeHundredthsOfSecond, 4);
+    yield buffer;
   },
 
   toBuffer: function(parameter, options) {
@@ -121,7 +117,7 @@ const DateTime: DataType = {
   },
 
   // TODO: type 'any' needs to be revisited.
-  validate: function(value): null | number | TypeError {
+  validate: function(value): null | number {
     if (value == null) {
       return null;
     }
@@ -131,7 +127,7 @@ const DateTime: DataType = {
     }
 
     if (isNaN(value)) {
-      return new TypeError('Invalid date.');
+      throw new TypeError('Invalid date.');
     }
 
     return value;

@@ -3,6 +3,7 @@ import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer'
 import { ChronoUnit, LocalDate } from '@js-joda/core';
 
 const EPOCH_DATE = LocalDate.ofYearDay(1, 1);
+const NULL_LENGTH = Buffer.from([0x00]);
 
 const DateTime2: DataType & { resolveScale: NonNullable<DataType['resolveScale']> } = {
   id: 0x2A,
@@ -23,68 +24,82 @@ const DateTime2: DataType & { resolveScale: NonNullable<DataType['resolveScale']
     }
   },
 
-  writeTypeInfo: function(buffer, parameter) {
-    buffer.writeUInt8(this.id);
-    buffer.writeUInt8(parameter.scale);
+  generateTypeInfo(parameter, _options) {
+    return Buffer.from([this.id, parameter.scale!]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
+    }
+
+    switch (parameter.scale!) {
+      case 0:
+      case 1:
+      case 2:
+        return Buffer.from([0x06]);
+
+      case 3:
+      case 4:
+        return Buffer.from([0x07]);
+
+      case 5:
+      case 6:
+      case 7:
+        return Buffer.from([0x08]);
+
+      default:
+        throw new Error('invalid scale');
+    }
   },
 
-  generate: function* (parameter, options) {
+  *generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
     const value = parameter.value;
     let scale = parameter.scale;
 
-    if (value != null) {
-      const buffer = new WritableTrackingBuffer(16);
-      scale = scale!;
+    const buffer = new WritableTrackingBuffer(16);
+    scale = scale!;
 
-      let timestamp;
-      if (options.useUTC) {
-        timestamp = ((value.getUTCHours() * 60 + value.getUTCMinutes()) * 60 + value.getUTCSeconds()) * 1000 + value.getUTCMilliseconds();
-      } else {
-        timestamp = ((value.getHours() * 60 + value.getMinutes()) * 60 + value.getSeconds()) * 1000 + value.getMilliseconds();
-      }
-      timestamp = timestamp * Math.pow(10, scale - 3);
-      timestamp += (value.nanosecondDelta != null ? value.nanosecondDelta : 0) * Math.pow(10, scale);
-      timestamp = Math.round(timestamp);
-
-      switch (scale) {
-        case 0:
-        case 1:
-        case 2:
-          buffer.writeUInt8(6);
-          buffer.writeUInt24LE(timestamp);
-          break;
-        case 3:
-        case 4:
-          buffer.writeUInt8(7);
-          buffer.writeUInt32LE(timestamp);
-          break;
-        case 5:
-        case 6:
-        case 7:
-          buffer.writeUInt8(8);
-          buffer.writeUInt40LE(timestamp);
-      }
-
-      let date;
-      if (options.useUTC) {
-        date = LocalDate.of(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
-      } else {
-        date = LocalDate.of(value.getFullYear(), value.getMonth() + 1, value.getDate());
-      }
-
-      const days = EPOCH_DATE.until(date, ChronoUnit.DAYS);
-      buffer.writeUInt24LE(days);
-      yield buffer.data;
+    let timestamp;
+    if (options.useUTC) {
+      timestamp = ((value.getUTCHours() * 60 + value.getUTCMinutes()) * 60 + value.getUTCSeconds()) * 1000 + value.getUTCMilliseconds();
     } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+      timestamp = ((value.getHours() * 60 + value.getMinutes()) * 60 + value.getSeconds()) * 1000 + value.getMilliseconds();
     }
+    timestamp = timestamp * Math.pow(10, scale - 3);
+    timestamp += (value.nanosecondDelta != null ? value.nanosecondDelta : 0) * Math.pow(10, scale);
+    timestamp = Math.round(timestamp);
+
+    switch (scale) {
+      case 0:
+      case 1:
+      case 2:
+        buffer.writeUInt24LE(timestamp);
+        break;
+      case 3:
+      case 4:
+        buffer.writeUInt32LE(timestamp);
+        break;
+      case 5:
+      case 6:
+      case 7:
+        buffer.writeUInt40LE(timestamp);
+    }
+
+    let date;
+    if (options.useUTC) {
+      date = LocalDate.of(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+    } else {
+      date = LocalDate.of(value.getFullYear(), value.getMonth() + 1, value.getDate());
+    }
+
+    const days = EPOCH_DATE.until(date, ChronoUnit.DAYS);
+    buffer.writeUInt24LE(days);
+    yield buffer.data;
   },
 
   toBuffer: function(parameter, options) {
@@ -124,7 +139,7 @@ const DateTime2: DataType & { resolveScale: NonNullable<DataType['resolveScale']
     }
   },
 
-  validate: function(value): null | number | TypeError {
+  validate: function(value): null | number {
     if (value == null) {
       return null;
     }
@@ -134,7 +149,7 @@ const DateTime2: DataType & { resolveScale: NonNullable<DataType['resolveScale']
     }
 
     if (isNaN(value)) {
-      return new TypeError('Invalid date.');
+      throw new TypeError('Invalid date.');
     }
 
     return value;

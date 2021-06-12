@@ -1,7 +1,6 @@
-import { DataType, ParameterData } from '../data-type';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+import { DataType } from '../data-type';
 
-const NULL = (1 << 16) - 1;
+const NULL_LENGTH = Buffer.from([0xFF, 0xFF]);
 
 const Char: { maximumLength: number } & DataType = {
   id: 0xAF,
@@ -47,10 +46,10 @@ const Char: { maximumLength: number } & DataType = {
     }
   },
 
-  writeTypeInfo: function(buffer, parameter: ParameterData<any>) {
-    buffer.writeUInt8(this.id);
-    buffer.writeUInt16LE(parameter.length);
-
+  generateTypeInfo(parameter) {
+    const buffer = Buffer.alloc(8);
+    buffer.writeUInt8(this.id, 0);
+    buffer.writeUInt16LE(parameter.length!, 1);
     const collation = Buffer.alloc(5);
 
     if (parameter.collation != null) {
@@ -79,26 +78,28 @@ const Char: { maximumLength: number } & DataType = {
       );
     }
 
-    buffer.writeBuffer(collation);
+    collation.copy(buffer, collation.length);
+    return buffer;
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function* (parameter, options) {
-    const value = parameter.value as any; // Temporary solution. Remove 'any' later.
-
-    if (value != null) {
-      const buffer = new WritableTrackingBuffer(0);
-      buffer.writeUsVarbyte(value, 'ascii');
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt16LE(NULL);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    const length = Buffer.byteLength(parameter.value.toString(), 'ascii');
+
+    const buffer = Buffer.alloc(2);
+    buffer.writeUInt16LE(length, 0);
+    return buffer;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    yield Buffer.from(parameter.value, 'ascii');
   },
 
   toBuffer: function(parameter) {
@@ -112,13 +113,13 @@ const Char: { maximumLength: number } & DataType = {
     }
   },
 
-  validate: function(value): null | string | TypeError {
+  validate: function(value): null | string {
     if (value == null) {
       return null;
     }
     if (typeof value !== 'string') {
       if (typeof value.toString !== 'function') {
-        return TypeError('Invalid string.');
+        throw new TypeError('Invalid string.');
       }
       value = value.toString();
     }

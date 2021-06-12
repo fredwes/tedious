@@ -1,5 +1,6 @@
 import { DataType } from '../data-type';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const NULL_LENGTH = Buffer.from([0xFF, 0xFF, 0xFF, 0xFF]);
 
 const Image: DataType = {
   id: 0x22,
@@ -20,35 +21,37 @@ const Image: DataType = {
     }
   },
 
-  writeTypeInfo: function(buffer, parameter) {
-    buffer.writeUInt8(this.id);
-    buffer.writeInt32LE(parameter.length);
+  generateTypeInfo(parameter) {
+    const buffer = Buffer.alloc(5);
+    buffer.writeUInt8(this.id, 0);
+    buffer.writeInt32LE(parameter.length!, 1);
+    return buffer;
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(4);
-      buffer.writeInt32LE(parameter.length!);
-      buffer.writeBuffer(parameter.value);
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(4);
-      buffer.writeInt32LE(parameter.length!);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    const buffer = Buffer.alloc(4);
+    buffer.writeInt32LE(parameter.length!, 0);
+    return buffer;
   },
 
-  validate: function(value): null | TypeError | Buffer {
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    yield parameter.value;
+  },
+
+  validate: function(value): null | Buffer {
     if (value == null) {
       return null;
     }
     if (!Buffer.isBuffer(value)) {
-      return new TypeError('Invalid buffer.');
+      throw new TypeError('Invalid buffer.');
     }
     return value;
   }

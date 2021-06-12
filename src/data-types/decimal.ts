@@ -2,6 +2,8 @@ import { DataType } from '../data-type';
 import DecimalN from './decimaln';
 import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
 
+const NULL_LENGTH = Buffer.from([0x00]);
+
 const Decimal: DataType & { resolvePrecision: NonNullable<DataType['resolvePrecision']>, resolveScale: NonNullable<DataType['resolveScale']> } = {
   id: 0x37,
   type: 'DECIMAL',
@@ -29,61 +31,68 @@ const Decimal: DataType & { resolvePrecision: NonNullable<DataType['resolvePreci
     }
   },
 
-  writeTypeInfo: function(buffer, parameter) {
-    buffer.writeUInt8(DecimalN.id);
+  generateTypeInfo(parameter, _options) {
+    let precision;
     if (parameter.precision! <= 9) {
-      buffer.writeUInt8(5);
+      precision = 0x05;
     } else if (parameter.precision! <= 19) {
-      buffer.writeUInt8(9);
+      precision = 0x09;
     } else if (parameter.precision! <= 28) {
-      buffer.writeUInt8(13);
+      precision = 0x0D;
     } else {
-      buffer.writeUInt8(17);
+      precision = 0x11;
     }
-    buffer.writeUInt8(parameter.precision);
-    buffer.writeUInt8(parameter.scale);
+
+    return Buffer.from([DecimalN.id, precision, parameter.precision!, parameter.scale!]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
+    }
 
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const sign = parameter.value < 0 ? 0 : 1;
-      const value = Math.round(Math.abs(parameter.value * Math.pow(10, parameter.scale!)));
-      if (parameter.precision! <= 9) {
-        const buffer = new WritableTrackingBuffer(6);
-        buffer.writeUInt8(5);
-        buffer.writeUInt8(sign);
-        buffer.writeUInt32LE(value);
-        yield buffer.data;
-      } else if (parameter.precision! <= 19) {
-        const buffer = new WritableTrackingBuffer(10);
-        buffer.writeUInt8(9);
-        buffer.writeUInt8(sign);
-        buffer.writeUInt64LE(value);
-        yield buffer.data;
-      } else if (parameter.precision! <= 28) {
-        const buffer = new WritableTrackingBuffer(14);
-        buffer.writeUInt8(13);
-        buffer.writeUInt8(sign);
-        buffer.writeUInt64LE(value);
-        buffer.writeUInt32LE(0x00000000);
-        yield buffer.data;
-      } else {
-        const buffer = new WritableTrackingBuffer(18);
-        buffer.writeUInt8(17);
-        buffer.writeUInt8(sign);
-        buffer.writeUInt64LE(value);
-        buffer.writeUInt32LE(0x00000000);
-        buffer.writeUInt32LE(0x00000000);
-        yield buffer.data;
-      }
+    const precision = parameter.precision!;
+    if (precision <= 9) {
+      return Buffer.from([0x05]);
+    } else if (precision <= 19) {
+      return Buffer.from([0x09]);
+    } else if (precision <= 28) {
+      return Buffer.from([0x0D]);
     } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
+      return Buffer.from([0x11]);
+    }
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const sign = parameter.value < 0 ? 0 : 1;
+    const value = Math.round(Math.abs(parameter.value * Math.pow(10, parameter.scale!)));
+    const precision = parameter.precision!;
+    if (precision <= 9) {
+      const buffer = Buffer.alloc(5);
+      buffer.writeUInt8(sign, 0);
+      buffer.writeUInt32LE(value, 1);
+      yield buffer;
+    } else if (precision <= 19) {
+      const buffer = new WritableTrackingBuffer(9);
+      buffer.writeUInt8(sign);
+      buffer.writeUInt64LE(value);
+      yield buffer.data;
+    } else if (precision <= 28) {
+      const buffer = new WritableTrackingBuffer(13);
+      buffer.writeUInt8(sign);
+      buffer.writeUInt64LE(value);
+      buffer.writeUInt32LE(0x00000000);
+      yield buffer.data;
+    } else {
+      const buffer = new WritableTrackingBuffer(17);
+      buffer.writeUInt8(sign);
+      buffer.writeUInt64LE(value);
+      buffer.writeUInt32LE(0x00000000);
+      buffer.writeUInt32LE(0x00000000);
       yield buffer.data;
     }
   },
@@ -110,13 +119,13 @@ const Decimal: DataType & { resolvePrecision: NonNullable<DataType['resolvePreci
     }
   },
 
-  validate: function(value): number | null | TypeError {
+  validate: function(value): number | null {
     if (value == null) {
       return null;
     }
     value = parseFloat(value);
     if (isNaN(value)) {
-      return new TypeError('Invalid number.');
+      throw new TypeError('Invalid number.');
     }
     return value;
   }

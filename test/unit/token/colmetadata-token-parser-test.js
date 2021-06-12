@@ -1,10 +1,51 @@
 const dataTypeByName = require('../../../src/data-type').typeByName;
 const WritableTrackingBuffer = require('../../../src/tracking-buffer/writable-tracking-buffer');
-const TokenStreamParser = require('../../../src/token/stream-parser');
+const StreamParser = require('../../../src/token/stream-parser');
+const { alwaysEncryptedOptions } = require('../always-encrypted/crypto-util');
 const assert = require('chai').assert;
 
 describe('Colmetadata Token Parser', () => {
-  it('should int', () => {
+  describe('parsing the column metadata for a result with many columns', function() {
+    it('should parse them correctly', async function() {
+      const userType = 2;
+      const flags = 3;
+      const columnName = 'name';
+
+      const buffer = new WritableTrackingBuffer(50, 'ucs2');
+
+      buffer.writeUInt8(0x81);
+      // Column Count
+      buffer.writeUInt16LE(1024);
+
+      for (let i = 0; i < 1024; i++) {
+        buffer.writeUInt32LE(userType);
+        buffer.writeUInt16LE(flags);
+        buffer.writeUInt8(dataTypeByName.Int.id);
+        buffer.writeBVarchar(columnName);
+      }
+
+      const parser = StreamParser.parseTokens([buffer.data], {}, {});
+
+      const result = await parser.next();
+      assert.isFalse(result.done);
+      const token = result.value;
+
+      assert.isOk(!token.error);
+
+      assert.strictEqual(token.columns.length, 1024);
+
+      for (let i = 0; i < 1024; i++) {
+        assert.strictEqual(token.columns[i].userType, 2);
+        assert.strictEqual(token.columns[i].flags, 3);
+        assert.strictEqual(token.columns[i].type.name, 'Int');
+        assert.strictEqual(token.columns[i].colName, 'name');
+      }
+
+      assert.isTrue((await parser.next()).done);
+    });
+  });
+
+  it('should int', async () => {
     const numberOfColumns = 1;
     const userType = 2;
     const flags = 3;
@@ -20,10 +61,11 @@ describe('Colmetadata Token Parser', () => {
     buffer.writeBVarchar(columnName);
     // console.log(buffer.data)
 
-    const parser = new TokenStreamParser({ token() { } }, {}, {});
-    parser.write(buffer.data);
-    const token = parser.read();
-    // console.log(token)
+    const parser = StreamParser.parseTokens([buffer.data], {}, {});
+
+    const result = await parser.next();
+    assert.isFalse(result.done);
+    const token = result.value;
 
     assert.isNotNull(token);
     assert.isOk(!token.error);
@@ -32,9 +74,11 @@ describe('Colmetadata Token Parser', () => {
     assert.strictEqual(token.columns[0].flags, 3);
     assert.strictEqual(token.columns[0].type.name, 'Int');
     assert.strictEqual(token.columns[0].colName, 'name');
+
+    assert.isTrue((await parser.next()).done);
   });
 
-  it('should varchar', () => {
+  it('should varchar', async () => {
     const numberOfColumns = 1;
     const userType = 2;
     const flags = 3;
@@ -54,12 +98,11 @@ describe('Colmetadata Token Parser', () => {
     buffer.writeBVarchar(columnName);
     // console.log(buffer)
 
-    const parser = new TokenStreamParser({ token() { } }, {}, {});
-    parser.write(buffer.data);
-    const token = parser.read();
-    // console.log(token)
 
-    assert.isNotNull(token);
+    const parser = StreamParser.parseTokens([buffer.data], {}, {});
+    const result = await parser.next();
+    assert.isFalse(result.done);
+    const token = result.value;
     assert.isOk(!token.error);
     assert.strictEqual(token.columns.length, 1);
     assert.strictEqual(token.columns[0].userType, 2);
@@ -74,7 +117,22 @@ describe('Colmetadata Token Parser', () => {
     assert.strictEqual(token.columns[0].dataLength, length);
   });
 
-  it('should parse crypto-metadata', () => {
+  it('should parse crypto-metadata', async () => {
+    const alwaysEncryptedOptionsLocal = { ...alwaysEncryptedOptions };
+    const alwaysEncryptedCEK = Buffer.from([
+      // decrypted column key must be 32 bytes long for AES256
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+
+    alwaysEncryptedOptionsLocal.encryptionKeyStoreProviders = {
+      'MSSQL_JAVA_KEYSTORE': {
+        decryptColumnEncryptionKey: () => Promise.resolve(alwaysEncryptedCEK),
+      },
+    };
+
     const buffer = Buffer.from([
       // -----
       // framing seq ...
@@ -275,12 +333,12 @@ describe('Colmetadata Token Parser', () => {
     ]);
     // console.log(buffer);
 
-    const parser = new TokenStreamParser({ token() {} }, {}, {
-      serverSupportsColumnEncryption: true,
-    });
-    parser.write(buffer);
-    const token = parser.read();
-    // console.log(token);
+    const parser = StreamParser.parseTokens([buffer], {}, alwaysEncryptedOptionsLocal);
+    const result = await parser.next();
+
+    assert.isFalse(result.done);
+    const token = result.value;
+    assert.isOk(!token.error);
 
     assert.isNotNull(token);
     assert.isOk(!token.error);
@@ -314,7 +372,7 @@ describe('Colmetadata Token Parser', () => {
     assert.strictEqual(columnCryptoMetadata.encryptionType, 0x01);
     assert.deepEqual(
       columnCryptoMetadata.normalizationRuleVersion,
-      Buffer.from([ 0x01 ]),
+      Buffer.from([0x01]),
     );
 
     assert.isNotNull(columnCryptoMetadata.cekEntry);
@@ -325,7 +383,7 @@ describe('Colmetadata Token Parser', () => {
     assert.strictEqual(columnCryptoCekTableEntry.cekVersion, 0x01);
     assert.deepEqual(
       columnCryptoCekTableEntry.cekMdVersion,
-      Buffer.from([ 0xF1, 0x08, 0x60, 0x01, 0xE8, 0xAA, 0x00, 0x00 ]),
+      Buffer.from([0xF1, 0x08, 0x60, 0x01, 0xE8, 0xAA, 0x00, 0x00]),
     );
 
     assert.strictEqual(columnCryptoCekTableEntry.columnEncryptionKeyValues.length, 0x01);
@@ -336,7 +394,7 @@ describe('Colmetadata Token Parser', () => {
     assert.strictEqual(columnEncryptionKeyValue.keyVersion, 0x01);
     assert.deepEqual(
       columnEncryptionKeyValue.mdVersion,
-      Buffer.from([ 0xF1, 0x08, 0x60, 0x01, 0xE8, 0xAA, 0x00, 0x00 ]),
+      Buffer.from([0xF1, 0x08, 0x60, 0x01, 0xE8, 0xAA, 0x00, 0x00]),
     );
     assert.strictEqual(columnEncryptionKeyValue.keyPath, 'test');
     assert.strictEqual(columnEncryptionKeyValue.keyStoreName, 'MSSQL_JAVA_KEYSTORE');
@@ -361,5 +419,7 @@ describe('Colmetadata Token Parser', () => {
     assert.strictEqual(columnCryptoBaseTypeCollation.version, 0x02);
     assert.strictEqual(columnCryptoBaseTypeCollation.sortId, 0x00);
     assert.strictEqual(columnCryptoBaseTypeCollation.codepage, 'CP1252');
+
+    assert.isTrue((await parser.next()).done);
   });
 });

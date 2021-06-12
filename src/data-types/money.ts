@@ -1,6 +1,12 @@
 import { DataType } from '../data-type';
-import MoneyN from './moneyn';
 import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+import MoneyN from './moneyn';
+
+const SHIFT_LEFT_32 = (1 << 16) * (1 << 16);
+const SHIFT_RIGHT_32 = 1 / SHIFT_LEFT_32;
+
+const NULL_LENGTH = Buffer.from([0x00]);
+const DATA_LENGTH = Buffer.from([0x08]);
 
 const Money: DataType = {
   id: 0x3C,
@@ -11,27 +17,29 @@ const Money: DataType = {
     return 'money';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(MoneyN.id);
-    buffer.writeUInt8(8);
+  generateTypeInfo: function() {
+    return Buffer.from([MoneyN.id, 0x08]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(9);
-      buffer.writeUInt8(8);
-      buffer.writeMoney(parameter.value * 10000);
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    return DATA_LENGTH;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const value = parameter.value * 10000;
+
+    const buffer = Buffer.alloc(8);
+    buffer.writeInt32LE(Math.floor(value * SHIFT_RIGHT_32), 0);
+    buffer.writeInt32LE(value & -1, 4);
+    yield buffer;
   },
 
   toBuffer: function(parameter) {
@@ -49,13 +57,13 @@ const Money: DataType = {
     }
   },
 
-  validate: function(value): number | null | TypeError {
+  validate: function(value): number | null {
     if (value == null) {
       return null;
     }
     value = parseFloat(value);
     if (isNaN(value)) {
-      return new TypeError('Invalid number.');
+      throw new TypeError('Invalid number.');
     }
     return value;
   }

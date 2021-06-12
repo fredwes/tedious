@@ -9,19 +9,19 @@ const IntN: DataType = {
     throw new Error('not implemented');
   },
 
-  writeTypeInfo() {
+  generateTypeInfo() {
     throw new Error('not implemented');
   },
 
-  writeParameterData() {
+  generateParameterLength() {
+    throw new Error('not implemented');
+  },
+
+  generateParameterData() {
     throw new Error('not implemented');
   },
 
   toBuffer() {
-    throw new Error('not implemented');
-  },
-
-  generate() {
     throw new Error('not implemented');
   },
 

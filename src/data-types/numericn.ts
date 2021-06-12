@@ -9,11 +9,7 @@ const NumericN: DataType = {
     throw new Error('not implemented');
   },
 
-  writeTypeInfo() {
-    throw new Error('not implemented');
-  },
-
-  writeParameterData() {
+  generateTypeInfo() {
     throw new Error('not implemented');
   },
 
@@ -21,7 +17,11 @@ const NumericN: DataType = {
     throw new Error('not implemented');
   },
 
-  generate() {
+  generateParameterLength() {
+    throw new Error('not implemented');
+  },
+
+  generateParameterData() {
     throw new Error('not implemented');
   },
 

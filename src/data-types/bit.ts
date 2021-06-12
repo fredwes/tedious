@@ -1,6 +1,8 @@
 import { DataType } from '../data-type';
 import BitN from './bitn';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const DATA_LENGTH = Buffer.from([0x01]);
+const NULL_LENGTH = Buffer.from([0x00]);
 
 const Bit: DataType = {
   id: 0x32,
@@ -11,32 +13,28 @@ const Bit: DataType = {
     return 'bit';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(BitN.id);
-    buffer.writeUInt8(1);
+  generateTypeInfo() {
+    return Buffer.from([BitN.id, 0x01]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function* (parameter, options) {
-    if (typeof parameter.value === 'undefined' || parameter.value === null) {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt8(1);
-      buffer.writeUInt8(parameter.value ? 1 : 0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    return DATA_LENGTH;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    yield parameter.value ? Buffer.from([0x01]) : Buffer.from([0x00]);
   },
 
   toBuffer: function(parameter) {
     const value = parameter.value;
-
     if (value != null) {
       const val = value as boolean;
       const result = Buffer.alloc(8);

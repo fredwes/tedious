@@ -1,7 +1,6 @@
 import { DataType } from '../data-type';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
 
-const NULL = (1 << 16) - 1;
+const NULL_LENGTH = Buffer.from([0xFF, 0xFF]);
 
 const NChar: DataType & { maximumLength: number } = {
   id: 0xEF,
@@ -48,26 +47,45 @@ const NChar: DataType & { maximumLength: number } = {
     }
   },
 
-  writeTypeInfo: function(buffer, parameter) {
-    buffer.writeUInt8(this.id);
-    buffer.writeUInt16LE(parameter.length! * 2);
-    buffer.writeBuffer(Buffer.from([0x00, 0x00, 0x00, 0x00, 0x00]));
+  generateTypeInfo: function(parameter) {
+    const buffer = Buffer.alloc(8);
+    buffer.writeUInt8(this.id, 0);
+    buffer.writeUInt16LE(parameter.length! * 2, 1);
+    return buffer;
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
+    }
 
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(0);
-      buffer.writeUsVarbyte(parameter.value, 'ucs2');
-      yield buffer.data;
+    const { value } = parameter;
+    if (value instanceof Buffer) {
+      const length = value.length;
+      const buffer = Buffer.alloc(2);
+
+      buffer.writeUInt16LE(length, 0);
+
+      return buffer;
     } else {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt16LE(NULL);
-      yield buffer.data;
+      const length = Buffer.byteLength(value.toString(), 'ucs2');
+
+      const buffer = Buffer.alloc(2);
+      buffer.writeUInt16LE(length, 0);
+      return buffer;
+    }
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const value = parameter.value;
+    if (value instanceof Buffer) {
+      yield value;
+    } else {
+      yield Buffer.from(value, 'ucs2');
     }
   },
 
@@ -82,13 +100,13 @@ const NChar: DataType & { maximumLength: number } = {
     }
   },
 
-  validate: function(value): string | null | TypeError {
+  validate: function(value): string | null {
     if (value == null) {
       return null;
     }
     if (typeof value !== 'string') {
       if (typeof value.toString !== 'function') {
-        return TypeError('Invalid string.');
+        throw new TypeError('Invalid string.');
       }
       value = value.toString();
     }

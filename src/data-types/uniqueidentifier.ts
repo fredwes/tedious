@@ -1,6 +1,8 @@
 import { DataType } from '../data-type';
 import { guidToArray } from '../guid-parser';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const NULL_LENGTH = Buffer.from([0x00]);
+const DATA_LENGTH = Buffer.from([0x10]);
 
 const UniqueIdentifier: DataType = {
   id: 0x24,
@@ -15,27 +17,24 @@ const UniqueIdentifier: DataType = {
     return 16;
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(this.id);
-    buffer.writeUInt8(0x10);
+  generateTypeInfo() {
+    return Buffer.from([this.id, 0x10]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0x10);
-      buffer.writeBuffer(Buffer.from(guidToArray(parameter.value)));
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    return DATA_LENGTH;
+  },
+
+  generateParameterData: function*(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    yield Buffer.from(guidToArray(parameter.value));
   },
 
   toBuffer: function(parameter) {
@@ -48,16 +47,23 @@ const UniqueIdentifier: DataType = {
     }
   },
 
-  validate: function(value): string | null | TypeError {
+  validate: function(value): string | null {
     if (value == null) {
       return null;
     }
+
     if (typeof value !== 'string') {
       if (typeof value.toString !== 'function') {
-        return TypeError('Invalid string.');
+        throw new TypeError('Invalid string.');
       }
+
       value = value.toString();
     }
+
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+      throw new TypeError('Invalid GUID.');
+    }
+
     return value;
   }
 };

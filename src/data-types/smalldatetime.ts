@@ -1,9 +1,11 @@
 import { DataType } from '../data-type';
 import DateTimeN from './datetimen';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
 
 const EPOCH_DATE = new Date(1900, 0, 1);
 const UTC_EPOCH_DATE = new Date(Date.UTC(1900, 0, 1));
+
+const DATA_LENGTH = Buffer.from([0x04]);
+const NULL_LENGTH = Buffer.from([0x00]);
 
 const SmallDateTime: DataType = {
   id: 0x3A,
@@ -14,39 +16,39 @@ const SmallDateTime: DataType = {
     return 'smalldatetime';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(DateTimeN.id);
-    buffer.writeUInt8(4);
+  generateTypeInfo() {
+    return Buffer.from([DateTimeN.id, 0x04]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(8);
-      let days, dstDiff, minutes;
-      if (options.useUTC) {
-        days = Math.floor((parameter.value.getTime() - UTC_EPOCH_DATE.getTime()) / (1000 * 60 * 60 * 24));
-        minutes = (parameter.value.getUTCHours() * 60) + parameter.value.getUTCMinutes();
-      } else {
-        dstDiff = -(parameter.value.getTimezoneOffset() - EPOCH_DATE.getTimezoneOffset()) * 60 * 1000;
-        days = Math.floor((parameter.value.getTime() - EPOCH_DATE.getTime() + dstDiff) / (1000 * 60 * 60 * 24));
-        minutes = (parameter.value.getHours() * 60) + parameter.value.getMinutes();
-      }
-
-      buffer.writeUInt8(4);
-      buffer.writeUInt16LE(days);
-
-      buffer.writeUInt16LE(minutes);
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    return DATA_LENGTH;
+  },
+
+  generateParameterData: function*(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const buffer = Buffer.alloc(4);
+
+    let days, dstDiff, minutes;
+    if (options.useUTC) {
+      days = Math.floor((parameter.value.getTime() - UTC_EPOCH_DATE.getTime()) / (1000 * 60 * 60 * 24));
+      minutes = (parameter.value.getUTCHours() * 60) + parameter.value.getUTCMinutes();
+    } else {
+      dstDiff = -(parameter.value.getTimezoneOffset() - EPOCH_DATE.getTimezoneOffset()) * 60 * 1000;
+      days = Math.floor((parameter.value.getTime() - EPOCH_DATE.getTime() + dstDiff) / (1000 * 60 * 60 * 24));
+      minutes = (parameter.value.getHours() * 60) + parameter.value.getMinutes();
+    }
+
+    buffer.writeUInt16LE(days, 0);
+    buffer.writeUInt16LE(minutes, 2);
+
+    yield buffer;
   },
 
   toBuffer: function(parameter, options) {
@@ -73,7 +75,7 @@ const SmallDateTime: DataType = {
     }
   },
 
-  validate: function(value): null | Date| TypeError {
+  validate: function(value): null | Date {
     if (value == null) {
       return null;
     }
@@ -83,7 +85,7 @@ const SmallDateTime: DataType = {
     }
 
     if (isNaN(value)) {
-      return new TypeError('Invalid date.');
+      throw new TypeError('Invalid date.');
     }
 
     return value;

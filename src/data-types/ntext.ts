@@ -11,15 +11,15 @@ const NText: DataType = {
     throw new Error('not implemented');
   },
 
-  writeTypeInfo() {
+  generateTypeInfo() {
     throw new Error('not implemented');
   },
 
-  writeParameterData() {
+  generateParameterLength() {
     throw new Error('not implemented');
   },
 
-  generate() {
+  generateParameterData() {
     throw new Error('not implemented');
   },
 

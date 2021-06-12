@@ -38,8 +38,11 @@ class MessageIO extends EventEmitter {
 
     this.incomingMessageStream = new IncomingMessageStream(this.debug);
     this.incomingMessageStream.on('data', (message: Message) => {
-      message.on('data', (chunk: Buffer) => { this.emit('data', chunk); });
-      message.on('end', () => { this.emit('message'); });
+      this.emit('data', message);
+    });
+
+    this.incomingMessageStream.on('error', (message) => {
+      this.emit('error', message);
     });
 
     this.outgoingMessageStream = new OutgoingMessageStream(this.debug, { packetSize: packetSize });

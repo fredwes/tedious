@@ -1,6 +1,8 @@
 import { DataType } from '../data-type';
 import IntN from './intn';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const DATA_LENGTH = Buffer.from([0x01]);
+const NULL_LENGTH = Buffer.from([0x00]);
 
 const TinyInt: DataType = {
   id: 0x30,
@@ -11,28 +13,26 @@ const TinyInt: DataType = {
     return 'tinyint';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(IntN.id);
-    buffer.writeUInt8(1);
+  generateTypeInfo() {
+    return Buffer.from([IntN.id, 0x01]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt8(1);
-      buffer.writeUInt8(Number(parameter.value));
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(2);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
 
+    return DATA_LENGTH;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const buffer = Buffer.alloc(1);
+    buffer.writeUInt8(Number(parameter.value), 0);
+    yield buffer;
   },
 
   toBuffer: function(parameter) {
@@ -49,7 +49,7 @@ const TinyInt: DataType = {
     }
   },
 
-  validate: function(value): number | null | TypeError {
+  validate: function(value): number | null {
     if (value == null) {
       return null;
     }
@@ -59,11 +59,11 @@ const TinyInt: DataType = {
     }
 
     if (isNaN(value)) {
-      return new TypeError('Invalid number.');
+      throw new TypeError('Invalid number.');
     }
 
     if (value < 0 || value > 255) {
-      return new TypeError('Value must be between 0 and 255, inclusive.');
+      throw new TypeError('Value must be between 0 and 255, inclusive.');
     }
 
     return value | 0;

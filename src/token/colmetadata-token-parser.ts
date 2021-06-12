@@ -1,44 +1,38 @@
 import metadataParse, { Metadata } from '../metadata-parser';
 import { CEKEntry } from '../always-encrypted/cek-entry';
 import { CryptoMetadata } from '../always-encrypted/types';
-
 import Parser from './stream-parser';
 import { InternalConnectionOptions } from '../connection';
 import { ColMetadataToken } from './token';
-
-export type ColumnMetadata = Metadata & {
+export interface ColumnMetadata extends Metadata {
+  /**
+   * The column's name。
+   */
   colName: string;
   tableName?: string | string[];
-};
-
+}
 type cekTableEntryMetadata = {
   databaseId: number;
   cekId: number;
   cekVersion: number;
   cekMdVersion: Buffer;
 }
-
 function readTableName(parser: Parser, options: InternalConnectionOptions, metadata: Metadata, callback: (tableName?: string | string[]) => void) {
   if (metadata.type.hasTableName) {
     if (options.tdsVersion >= '7_2') {
       parser.readUInt8((numberOfTableNameParts) => {
         const tableName: string[] = [];
-
         let i = 0;
         function next(done: () => void) {
           if (numberOfTableNameParts === i) {
             return done();
           }
-
           parser.readUsVarChar((part) => {
             tableName.push(part);
-
             i++;
-
             next(done);
           });
         }
-
         next(() => {
           callback(tableName);
         });
@@ -50,7 +44,6 @@ function readTableName(parser: Parser, options: InternalConnectionOptions, metad
     callback(undefined);
   }
 }
-
 function readColumnName(parser: Parser, options: InternalConnectionOptions, index: number, metadata: Metadata, callback: (colName: string) => void) {
   parser.readBVarChar((colName) => {
     if (options.columnNameReplacer) {
@@ -64,7 +57,6 @@ function readColumnName(parser: Parser, options: InternalConnectionOptions, inde
     }
   });
 }
-
 function readCryptoMetadataOrdinal(parser: Parser, cekList: CEKEntry[] | undefined, callback: (ordinal: number) => void) {
   if (cekList) {
     parser.readUInt16LE((ordinal) => {
@@ -74,7 +66,6 @@ function readCryptoMetadataOrdinal(parser: Parser, cekList: CEKEntry[] | undefin
     callback(0);
   }
 }
-
 function readCryptoMetadata(parser: Parser, metadata: Metadata, cekList: CEKEntry[] | undefined, options: InternalConnectionOptions, callback: (cryptoMetdata?: CryptoMetadata) => void) {
   if (options.serverSupportsColumnEncryption === true && 0x0800 === (metadata.flags & 0x0800)) {
     readCryptoMetadataOrdinal(parser, cekList, (ordinal) => {
@@ -102,7 +93,6 @@ function readCryptoMetadata(parser: Parser, metadata: Metadata, cekList: CEKEntr
     callback();
   }
 }
-
 function readCustomEncryptionMetadata(parser: Parser, algorithmId: number, callback: (algorithmName: string) => void) {
   if (algorithmId === 0) {
     parser.readUInt8((nameSize) => {
@@ -115,7 +105,6 @@ function readCustomEncryptionMetadata(parser: Parser, algorithmId: number, callb
     callback('');
   }
 }
-
 function readColumn(parser: Parser, options: InternalConnectionOptions, index: number, cekList: CEKEntry[] | undefined, callback: (column: ColumnMetadata) => void) {
   metadataParse(parser, options, (metadata) => {
     readTableName(parser, options, metadata, (tableName) => {
@@ -124,7 +113,6 @@ function readColumn(parser: Parser, options: InternalConnectionOptions, index: n
           cryptoMetadata.baseTypeInfo.flags = metadata.flags;
           metadata.collation = cryptoMetadata.baseTypeInfo.collation;
         }
-
         readColumnName(parser, options, index, metadata, (colName) => {
           callback({
             userType: metadata.userType,
@@ -145,27 +133,22 @@ function readColumn(parser: Parser, options: InternalConnectionOptions, index: n
     });
   }, true);
 }
-
 function readCEKTable(parser: Parser, options: InternalConnectionOptions, callback: (cekList?: CEKEntry[]) => void) {
   if (options.serverSupportsColumnEncryption === true) {
     parser.readUInt16LE((tableSize) => {
       if (tableSize > 0) {
         const cekList: CEKEntry[] = [];
-
         let i = 0;
         function next(done: () => void) {
           if (i === tableSize) {
             return done();
           }
-
           readCEKTableEntry(parser, (cekEntry: CEKEntry) => {
             cekList.push(cekEntry);
-
             i++;
             next(done);
           });
         }
-
         next(() => {
           callback(cekList);
         });
@@ -177,7 +160,6 @@ function readCEKTable(parser: Parser, options: InternalConnectionOptions, callba
     return callback();
   }
 }
-
 function readCEKTableEntry(parser: Parser, callback: (cekEntry: CEKEntry) => void) {
   parser.readUInt32LE((databaseId) => {
     parser.readUInt32LE((cekId) => {
@@ -185,13 +167,11 @@ function readCEKTableEntry(parser: Parser, callback: (cekEntry: CEKEntry) => voi
         parser.readBuffer(8, (cekMdVersion) => {
           parser.readUInt8((cekValueCount) => {
             const cekEntry = new CEKEntry(cekValueCount);
-
             let i = 0;
             function next(done: () => void) {
               if (i === cekValueCount) {
                 return done();
               }
-
               readCEKValue(parser, cekEntry, {
                 databaseId,
                 cekId,
@@ -199,11 +179,9 @@ function readCEKTableEntry(parser: Parser, callback: (cekEntry: CEKEntry) => voi
                 cekMdVersion,
               }, () => {
                 i++;
-
                 next(done);
               });
             }
-
             next(() => {
               callback(cekEntry);
             });
@@ -213,7 +191,6 @@ function readCEKTableEntry(parser: Parser, callback: (cekEntry: CEKEntry) => voi
     });
   });
 }
-
 function readCEKValue(parser: Parser, cekEntry: CEKEntry, cekTableEntryMetadata: cekTableEntryMetadata, callback: () => void) {
   parser.readUInt16LE((encryptedCEKLength) => {
     parser.readBuffer(encryptedCEKLength, (encryptedCEK) => {
@@ -237,32 +214,39 @@ function readCEKValue(parser: Parser, cekEntry: CEKEntry, cekTableEntryMetadata:
     });
   });
 }
+async function colMetadataParser(parser: Parser): Promise<ColMetadataToken> {
+  while (parser.buffer.length - parser.position < 2) {
+    await parser.streamBuffer.waitForChunk();
+  }
+  const columnCount = parser.buffer.readUInt16LE(parser.position);
+  parser.position += 2;
+  let cekList: CEKEntry[] | undefined;
 
-function colMetadataParser(parser: Parser, _colMetadata: ColumnMetadata[], options: InternalConnectionOptions, callback: (token: ColMetadataToken) => void) {
-  parser.readUInt16LE((columnCount) => {
-    readCEKTable(parser, options, (cekList?: CEKEntry[]) => {
-      const columns: ColumnMetadata[] = [];
+  readCEKTable(parser, parser.options, (c?: CEKEntry[]) => { cekList = c; });
 
-      let i = 0;
-      function next(done: () => void) {
-        if (i === columnCount) {
-          return done();
-        }
+  while (parser.suspended) {
+    await parser.streamBuffer.waitForChunk();
+    parser.suspended = false;
+    const next = parser.next!;
+    next();
+  }
 
-        readColumn(parser, options, i, cekList, (column) => {
-          columns.push(column);
+  const columns: ColumnMetadata[] = [];
 
-          i++;
-          next(done);
-        });
-      }
-
-      next(() => {
-        callback(new ColMetadataToken(columns));
-      });
+  for (let i = 0; i < columnCount; i++) {
+    let column: ColumnMetadata;
+    readColumn(parser, parser.options, i, cekList, (c) => {
+      column = c;
     });
-  });
+    while (parser.suspended) {
+      await parser.streamBuffer.waitForChunk();
+      parser.suspended = false;
+      const next = parser.next!;
+      next();
+    }
+    columns.push(column!);
+  }
+  return new ColMetadataToken(columns);
 }
-
 export default colMetadataParser;
 module.exports = colMetadataParser;

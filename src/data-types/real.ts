@@ -1,6 +1,8 @@
 import { DataType } from '../data-type';
 import FloatN from './floatn';
-import WritableTrackingBuffer from '../tracking-buffer/writable-tracking-buffer';
+
+const NULL_LENGTH = Buffer.from([0x00]);
+const DATA_LENGTH = Buffer.from([0x04]);
 
 const Real: DataType = {
   id: 0x3B,
@@ -11,27 +13,26 @@ const Real: DataType = {
     return 'real';
   },
 
-  writeTypeInfo: function(buffer) {
-    buffer.writeUInt8(FloatN.id);
-    buffer.writeUInt8(4);
+  generateTypeInfo() {
+    return Buffer.from([FloatN.id, 0x04]);
   },
 
-  writeParameterData: function(buff, parameter, options, cb) {
-    buff.writeBuffer(Buffer.concat(Array.from(this.generate(parameter, options))));
-    cb();
-  },
-
-  generate: function*(parameter, options) {
-    if (parameter.value != null) {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(4);
-      buffer.writeFloatLE(parseFloat(parameter.value));
-      yield buffer.data;
-    } else {
-      const buffer = new WritableTrackingBuffer(1);
-      buffer.writeUInt8(0);
-      yield buffer.data;
+  generateParameterLength(parameter, options) {
+    if (parameter.value == null) {
+      return NULL_LENGTH;
     }
+
+    return DATA_LENGTH;
+  },
+
+  * generateParameterData(parameter, options) {
+    if (parameter.value == null) {
+      return;
+    }
+
+    const buffer = Buffer.alloc(4);
+    buffer.writeFloatLE(parseFloat(parameter.value), 0);
+    yield buffer;
   },
 
   toBuffer: function(parameter) {
@@ -48,13 +49,13 @@ const Real: DataType = {
     }
   },
 
-  validate: function(value): null| number |TypeError {
+  validate: function(value): null | number {
     if (value == null) {
       return null;
     }
     value = parseFloat(value);
     if (isNaN(value)) {
-      return new TypeError('Invalid number.');
+      throw new TypeError('Invalid number.');
     }
     return value;
   }
